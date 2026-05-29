@@ -12,11 +12,11 @@ export function Sidebar() {
   return (
     <aside className="w-56 shrink-0 border-r border-zinc-800 bg-zinc-950 px-4 py-6 flex flex-col gap-1">
       <div className="px-2 pb-6">
-        <div className="text-xs uppercase tracking-wider text-zinc-500">
-          NovaTech
-        </div>
         <div className="text-base font-semibold text-zinc-100">
-          AI Workforce
+          HiveMindOS
+        </div>
+        <div className="text-[11px] uppercase tracking-wider text-zinc-500 mt-0.5">
+          AI Workforce Platform
         </div>
       </div>
       <nav className="flex flex-col gap-1">
@@ -31,8 +31,8 @@ export function Sidebar() {
           </Link>
         ))}
       </nav>
-      <div className="mt-auto px-2 pt-6 text-xs text-zinc-600">
-        v0.1 · Phase 2 Day 4
+      <div className="mt-auto px-2 pt-6 text-[11px] text-zinc-600">
+        v0.1
       </div>
     </aside>
   );

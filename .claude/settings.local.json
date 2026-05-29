@@ -32,7 +32,10 @@
       "Bash(curl.exe -s -o /tmp/v.html -w \"status: %{http_code}, size: %{size_download}\\\\n\" https://hivemindos.vercel.app/dashboard)",
       "Bash(curl.exe -s -i -H \"Origin: https://hivemindos.vercel.app\" https://aiworkforce-backend.onrender.com/api/agents)",
       "Bash(curl.exe -s -I https://hivemindos.vercel.app/dashboard)",
-      "Bash(curl.exe -s -o /tmp/b.html -w \"status: %{http_code} | size: %{size_download}\\\\n\" http://localhost:3000/dashboard/bots)"
+      "Bash(curl.exe -s -o /tmp/b.html -w \"status: %{http_code} | size: %{size_download}\\\\n\" http://localhost:3000/dashboard/bots)",
+      "Bash(curl.exe -s -o /dev/null -w \"/health: %{http_code} in %{time_total}s\\\\n\" --max-time 30 https://aiworkforce-backend.onrender.com/health)",
+      "Bash(curl.exe -s -o /dev/null -w \"/api/agents: %{http_code} in %{time_total}s\\\\n\" --max-time 30 https://aiworkforce-backend.onrender.com/api/agents)",
+      "Bash(curl.exe -s -o /tmp/v.html -w \"/dashboard/bots: %{http_code} | %{size_download} bytes\\\\n\" --max-time 30 https://hivemindos.vercel.app/dashboard/bots)"
     ]
   }
 }

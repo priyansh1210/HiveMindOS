@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NovaTech AI Workforce",
-  description: "Autonomous Enterprise AI Workforce — agents that collaborate, decide, and execute.",
+  title: "HiveMindOS — AI Workforce Platform",
+  description: "An AI Operating System for businesses. Deploy a team of specialized agents that collaborate, decide, and execute autonomously.",
 };
 
 export default function RootLayout({
