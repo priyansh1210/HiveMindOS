@@ -1,5 +1,6 @@
 import type {
   Agent,
+  AgentInvocation,
   AgentMetric,
   Message,
   Task,
@@ -48,6 +49,19 @@ export const api = {
   getTaskMetrics: () => jsonFetch<TaskMetrics>("/api/analytics/tasks"),
 
   getAgentMetrics: () => jsonFetch<AgentMetric[]>("/api/analytics/agents"),
+
+  invokeAgent: (role: string, prompt: string, resetMemory = false) =>
+    jsonFetch<AgentInvocation>(`/api/agents/roles/${encodeURIComponent(role)}/invoke`, {
+      method: "POST",
+      body: JSON.stringify({ prompt, reset_memory: resetMemory }),
+    }),
+
+  resetAgent: (role: string) =>
+    fetch(`${API_BASE}/api/agents/roles/${encodeURIComponent(role)}/reset`, {
+      method: "POST",
+    }).then((r) => {
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    }),
 };
 
 export function wsUrl(): string {

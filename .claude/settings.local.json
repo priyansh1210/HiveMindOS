@@ -28,7 +28,11 @@
       "Bash(node *)",
       "Bash(curl.exe -s -o /tmp/analytics.html -w \"status: %{http_code} | size: %{size_download}\\\\n\" http://localhost:3000/dashboard/analytics)",
       "Bash(curl.exe -s http://localhost:3000/dashboard)",
-      "Bash(curl.exe -s http://localhost:3000/dashboard/chat)"
+      "Bash(curl.exe -s http://localhost:3000/dashboard/chat)",
+      "Bash(curl.exe -s -o /tmp/v.html -w \"status: %{http_code}, size: %{size_download}\\\\n\" https://hivemindos.vercel.app/dashboard)",
+      "Bash(curl.exe -s -i -H \"Origin: https://hivemindos.vercel.app\" https://aiworkforce-backend.onrender.com/api/agents)",
+      "Bash(curl.exe -s -I https://hivemindos.vercel.app/dashboard)",
+      "Bash(curl.exe -s -o /tmp/b.html -w \"status: %{http_code} | size: %{size_download}\\\\n\" http://localhost:3000/dashboard/bots)"
     ]
   }
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const navItems = [
   { href: "/dashboard", label: "Agents", icon: "◎" },
+  { href: "/dashboard/bots", label: "Bots", icon: "✸" },
   { href: "/dashboard/tasks", label: "Tasks", icon: "▤" },
   { href: "/dashboard/chat", label: "Chat", icon: "✦" },
   { href: "/dashboard/analytics", label: "Analytics", icon: "▲" },

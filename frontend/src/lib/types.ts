@@ -89,3 +89,20 @@ export interface AgentMetric {
   messages_sent: number;
   tasks_touched: number;
 }
+
+export interface AgentToolCall {
+  name: string;
+  args: Record<string, unknown>;
+  duration_ms: number;
+  error: string | null;
+}
+
+export interface AgentInvocation {
+  agent: string;
+  response: string;
+  tool_calls: AgentToolCall[];
+  mentions: { to_agent: string; content: string }[];
+  turns: number;
+  duration_ms: number;
+  memory_size: number;
+}
