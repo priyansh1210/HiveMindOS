@@ -6,9 +6,20 @@
 
 ---
 
-## 📍 Build Progress (last updated 2026-05-29)
+## 📍 Build Progress (last updated 2026-05-30)
 
-**Status:** Phase 1 (Days 1-3) ✅ · Phase 2 (Days 4-6) ✅ · Phase 3 Days 7-9 ✅ · **Day 10 deploy prep ✅** (configs in repo, awaiting user click-through on Vercel + Render/Railway). Demo material in `DEMO.md`.
+**Status:** All 10 days ✅ + post-deploy polish ✅. **Live on Vercel + Render.** Submission materials (README, pitch deck PDF, demo script) ready. **All three demo scenarios now pass** (the onboarding/escalation failures were a thinking-token bug, not quota — fixed 2026-05-30, see below). Only pending: recording the 90-sec backup video + pitch.html → PDF + submit.
+
+### 🐛 2026-05-30 — Fixed: "tasks fail with 0 messages" was NOT a quota issue
+
+The Day-9 onboarding/escalation failures (and any "all subtasks errored" reports) were misdiagnosed as Gemini RPM/Groq TPD exhaustion. **Real cause:** `gemini-2.5-flash` is a *thinking* model — the thinking phase draws from the same `max_output_tokens` budget as the answer. Agent tools request tiny budgets (`support_tools` 200–350, `ops_tools` 250–450), so thinking consumed the whole budget → `finish_reason=MAX_TOKENS`, zero text parts → the SDK's `response.text` accessor raised → silent failover to Groq → when Groq's TPD was also spent, the subtask errored with no output. Intermittent because easy tasks left just enough room.
+
+**Fix** (`backend/llm_client.py`): Gemini calls now get `max_tokens + GEMINI_THINKING_HEADROOM (2048)` so thinking can't crowd out the answer, and a new `_extract_gemini_text()` reads parts safely + raises a clear `finish_reason=…` error (clean failover) instead of the cryptic `response.text` ValueError. Legacy `google-generativeai` 0.8.3 can't set `thinking_budget` directly (that's the newer `google-genai` SDK), so headroom is the no-migration fix. **Verified:** onboarding `59f7a29d-971f-439e-baa0-e7b1d0efaa76` (8 msgs, hr/ops/finance) + escalation `f9eb00bf-ce57-466a-9f64-d809d5a67fb1` (14 msgs, sales/support/finance) both complete on real Gemini, no Groq dependency.
+
+**Live URLs:**
+- Frontend: https://hivemindos.vercel.app
+- Backend: https://aiworkforce-backend.onrender.com
+- GitHub: https://github.com/priyansh1210/HiveMindOS
 
 ### ✅ Phase 1 — Foundation (Days 1-3)
 
@@ -133,16 +144,17 @@
 
 Ran all three blueprint demo scenarios sequentially via `backend/scripts/run_demo_scenarios.py`; results saved to `backend/scripts/demo_results.json`.
 
-**Outcome — only marketing is demo-ready today:**
+**Outcome (as recorded on Day 9 — superseded by the 2026-05-30 fix above):**
 
 - ✅ **Marketing campaign** (task `0444ed11-9ed4-4ba4-a3dd-68fa4095f7c2`): completed in 91 s, 10 messages, 5 subtasks, 3 agents (sales/finance/ops). Real multi-agent delegation: `sales → finance` for budget, `finance → ops` for revised plan review, `finance → sales` for ongoing updates. Finance correctly flagged budget exceeded $20K constraint and recommended a cut. **This is the marquee demo.**
-- ⚠ **Onboarding** + **escalation**: both completed but with 0 agent messages — all subtasks errored. Root cause: **Gemini RPM ceiling** hit by running 3 scenarios back-to-back (5 s cooldown between them was not enough).
+- ⚠ **Onboarding** + **escalation**: both completed with 0 agent messages on Day 9. **Originally blamed on quota — that was wrong** (see the 2026-05-30 fix at the top of Build Progress). The real cause was the thinking-token budget bug; both now pass.
 
-**Provider exhaustion discovered:**
+> ⚠️ The "provider exhaustion" framing below was the Day-9 misdiagnosis. Quota WAS tight that evening, but it is not why these two scenarios failed — the small-`max_tokens` tool calls were truncating mid-thinking and silently failing over to an already-spent Groq. Kept for history.
 
-- Gemini Flash key 1 + key 2 both exhausted today (free tier `generate_content_free_tier_requests`, limit shown as 20 — possibly daily-RPD on this account).
-- **Groq is at 99,837 / 100,000 TPD** (rolling 24h) — fallback is effectively dead until tomorrow.
-- Discovered via direct `call_llm(..., role="fallback")` probe — returned `RateLimitError 429: tokens per day (TPD): Limit 100000, Used 99837, Requested 331`.
+**Provider exhaustion (as observed Day 9, contributing but not root cause):**
+
+- Gemini Flash key 1 + key 2 both low on the free tier that evening.
+- **Groq was at 99,837 / 100,000 TPD** (rolling 24h) — which is *why* the silent Gemini→Groq failover then also errored, masking the real bug.
 
 **Artefacts added:**
 
@@ -171,16 +183,86 @@ Ran all three blueprint demo scenarios sequentially via `backend/scripts/run_dem
 
 **Git state:** No git repo at `D:\Ai_Agent_Enterprise\` root. `frontend/.git` exists from the Next.js scaffold but is isolated. **The user must `git init` at the root, commit, and push to GitHub before the platforms can pull.** `.gitignore` is already comprehensive (covers `.env`, `.venv`, `__pycache__`, `node_modules`, `.next`).
 
-### ⏭️ Next — user click-through on the platforms
+### ✅ Phase 4 Day 10 — Production deploy COMPLETE
 
-The codebase is ready. User needs to:
-1. `git init` at repo root, push to GitHub.
-2. Deploy backend to Render (uses `render.yaml`) or Railway. Set all 7 env vars manually.
-3. Deploy frontend to Vercel with Root Directory = `frontend`. Set `NEXT_PUBLIC_API_BASE` = backend URL.
-4. Update backend `CORS_ORIGINS` to include the Vercel URL.
-5. Smoke-test: load Vercel URL, submit a task, watch chat feed.
+Live on `https://hivemindos.vercel.app` (frontend) + `https://aiworkforce-backend.onrender.com` (backend). GitHub: `priyansh1210/HiveMindOS`. End-to-end verified — SSR fetches from Vercel reach Render, CORS preflight returns `access-control-allow-origin: https://hivemindos.vercel.app`, task dispatch → toast → TaskDetail modal works in prod.
 
-See chat transcript or DEMO.md for the verbatim command sequences. **NOT** writing a `DEPLOY.md` unless the user asks.
+**Two gotchas discovered (see [[project-deploy]] memory for the full story):**
+
+1. **`frontend/.git` submodule trap.** First `git add -A` at repo root added frontend as a gitlink (`create mode 160000 frontend`) because `create-next-app` had left a `.git` inside it — so the pushed repo had an empty placeholder. Fix: `git rm --cached frontend && Remove-Item -Recurse -Force frontend\.git && git add frontend && git commit --amend --no-edit`.
+2. **Render Blueprint ignores `runtime.txt`.** First deploy used Python 3.14 → no pre-built `pydantic-core==2.27.1` wheel → maturin tried to build from Rust source → read-only filesystem error. Fix: pin via `PYTHON_VERSION` env var in `render.yaml`:
+   ```yaml
+   envVars:
+     - key: PYTHON_VERSION
+       value: 3.11.9
+   ```
+   `runtime.txt` is now redundant but harmless. **Reapply this fix on any future Render Python Blueprint.**
+
+---
+
+### ✅ Post-deploy — Per-agent direct chat (`/dashboard/bots`)
+
+After deploy, judges' hackathon brief asked for "Sales Bot / Support Bot / Customer Care Bot" — single-bot interfaces. The 5 existing agents already covered those domains, but only as participants in orchestrated tasks. So added a direct-chat surface that exposes the same agents as standalone bots, *without* changing the orchestrator path.
+
+**Backend:** zero changes needed — `POST /api/agents/roles/{role}/invoke` and `POST /api/agents/roles/{role}/reset` already existed but were unused by the frontend.
+
+**Frontend additions:**
+- `src/lib/types.ts` — added `AgentToolCall` and `AgentInvocation` types matching the existing backend response shape.
+- `src/lib/api.ts` — added `api.invokeAgent(role, prompt, resetMemory)` and `api.resetAgent(role)`.
+- `src/components/bots/BotsPanel.tsx` — top-level client wrapper, owns selected-role state.
+- `src/components/bots/AgentSelector.tsx` — left rail with all 5 agents; click to switch.
+- `src/components/bots/AgentChat.tsx` — chat window with: user/agent bubbles, tool-call chips (`🔧 generate_pitch 1240ms`), per-message duration, typing indicator, Reset memory button, 2 starter prompts per agent in the empty state, Enter-to-send (Shift+Enter for newline).
+- `src/app/dashboard/bots/page.tsx` — server component, fetches agents, passes to BotsPanel.
+- `src/components/layout/Sidebar.tsx` — added "Bots" nav entry between "Agents" and "Tasks".
+
+**Verified:** prod `npm run build` clean, `/dashboard/bots` returns 200 with all 5 agents in the selector and the correct "Talk to HR Agent" empty state. Each invoke hits the same LLM-call path (and same quota chain) as the orchestrator — useful as a Flow C demo: "this same Sales Agent runs both in the orchestrated workflow and as a standalone Sales Bot."
+
+---
+
+### ✅ Post-deploy — Branding refresh: HiveMindOS as platform, NovaTech as demo customer
+
+Project was named `HiveMindOS` (GitHub + Vercel URL) but the UI said "NovaTech" everywhere — confusing for judges who'd land on the page.
+
+- `src/components/layout/Sidebar.tsx` — top label now `HiveMindOS / AI Workforce Platform`. Bottom footer simplified to `v0.1` (per user preference; the longer "Demo workspace / NovaTech Inc." version was rejected).
+- `src/components/layout/Header.tsx` — `HiveMindOS Dashboard / Five autonomous agents · Demo workspace: NovaTech Inc.` (explicit platform/customer distinction).
+- `src/app/layout.tsx` — browser tab title `HiveMindOS — AI Workforce Platform`, OG description matched.
+
+**Pattern to remember:** the platform brand owns the user-facing chrome; NovaTech is contextualized as "Demo workspace" so judges immediately see it's a demo company, not the product name.
+
+---
+
+### ✅ Post-deploy — Submission materials
+
+**`README.md`** (repo root) — winner-style README explicitly mapped to the hackathon's 4 judging criteria. Sections:
+- Live demo badges at the top (compliance gate against the "incomplete details → auto-rejection" warning).
+- Problem / Solution / 30-second tour for the **Real-World Applicability (25%)** weight.
+- **What Makes This Different** section names 5 technically specific innovations for the **Innovation (30%)** weight — mention-driven dynamic delegation, 3-provider failover, vendor-neutral text-protocol tools, two surfaces / one backend, real-time observability as a primitive.
+- ASCII architecture diagram + request lifecycle + failure handling for **Technical Architecture (25%)**.
+- TOC + project structure + Run Locally + API reference for **Documentation Clarity (20%)**.
+
+**`docs/pitch.html`** — 10-slide pitch deck as a self-contained HTML file. Dark theme matching the app. Each slide is a fixed 1280×720 canvas with print-friendly CSS. User opens in Chrome → Ctrl+P → "Save as PDF" with **Background graphics ON** (required for the dark theme to print correctly). References screenshots from `docs/screenshots/{01..05}.png` (saved by user from the live app: dashboard, bots, tasks, chat, analytics). Slides: title → problem → solution → one-prompt → wow-moment → replayable → standalone-bots → analytics → 5 innovations → try-it-live.
+
+**Project description text** (drafted in chat, ~140 words) — for the submission form's free-text field.
+
+**Submission attachments plan** (per chat with user):
+- Tier 1 (must have): 90-sec demo video (Loom, tomorrow after quota reset), pitch deck PDF (now).
+- Tier 2 (nice): architecture PNG, screenshots gallery.
+- Tier 3 (skip): blog post, Twitter thread.
+
+---
+
+### ✅ Post-deploy — Repo hygiene
+
+- `.claude/settings.local.json` (Claude Code's permission allowlist) was accidentally committed in the initial push. Removed via `git rm -r --cached .claude && add to .gitignore`. **Pattern:** always add `.claude/` to `.gitignore` on any new project from now on.
+
+---
+
+### ⏭️ What's left (the only items pending)
+
+1. ~~Quota reset retest of onboarding/escalation~~ **DONE 2026-05-30** — the failures were the thinking-token bug, not quota. Both scenarios now pass (task IDs in the fix note at the top). DEMO.md's "What's actually working" table updated.
+2. **Record `demo-backup.mp4`.** ~90 s screen capture: dashboard → click marketing chip → switch to chat tab → narrate as messages stream → switch to analytics → end on URL. Tools: Loom (recommended), Windows Game Bar, or ScreenPal. Save to repo root or upload as Loom URL.
+3. **Convert `docs/pitch.html` → `docs/pitch.pdf`.** Open in Chrome, Ctrl+P, Save as PDF, Background graphics ON, landscape. Done.
+4. **Submit.** Upload to the hackathon form: repo URL, live URL, pitch PDF, demo video Loom URL, project description (the ~140-word version drafted in chat).
 
 ### 🔑 Known free-tier quotas (so you don't burn yourself)
 

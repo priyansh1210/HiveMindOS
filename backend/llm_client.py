@@ -55,6 +55,15 @@ def _get_groq_client() -> AsyncGroq:
 
 DEFAULT_TIMEOUT_SECS = 45
 
+# gemini-2.5-flash/pro are *thinking* models: the "thinking" phase draws from the
+# same max_output_tokens budget as the visible answer. Callers size max_tokens for
+# the answer alone (tools ask for 200-500), so without headroom the thinking phase
+# eats the whole budget and the model returns finish_reason=MAX_TOKENS with zero
+# text parts — which surfaces as the `response.text` ValueError. We add a fixed
+# thinking allowance on top of the caller's answer budget. (The legacy
+# google-generativeai 0.8.3 SDK can't set thinking_budget directly.)
+GEMINI_THINKING_HEADROOM = 2048
+
 
 async def call_llm(
     prompt: str,
@@ -136,7 +145,8 @@ async def _call_gemini(
 ) -> str:
     generation_config: dict = {
         "temperature": temperature,
-        "max_output_tokens": max_tokens,
+        # Reserve room for the thinking phase so it never crowds out the answer.
+        "max_output_tokens": max_tokens + GEMINI_THINKING_HEADROOM,
     }
     if json_mode:
         generation_config["response_mime_type"] = "application/json"
@@ -151,7 +161,23 @@ async def _call_gemini(
             generation_config=generation_config,
         )
         response = await asyncio.to_thread(model.generate_content, prompt)
-    return (response.text or "").strip()
+    return _extract_gemini_text(response).strip()
+
+
+def _extract_gemini_text(response) -> str:
+    """Pull text out of a Gemini response without tripping the `response.text`
+    accessor, which raises if the candidate has no text Part (e.g. the response
+    was truncated mid-thinking, or blocked). On no usable text we raise so the
+    caller fails over to the next key / Groq instead of returning "".
+    """
+    candidates = getattr(response, "candidates", None) or []
+    for candidate in candidates:
+        parts = getattr(getattr(candidate, "content", None), "parts", None) or []
+        text = "".join(getattr(p, "text", "") or "" for p in parts)
+        if text:
+            return text
+    finish = getattr(candidates[0], "finish_reason", "?") if candidates else "none"
+    raise RuntimeError(f"Gemini returned no text (finish_reason={finish})")
 
 
 async def _call_groq(

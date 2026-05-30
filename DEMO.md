@@ -6,7 +6,9 @@
 
 ## 🚨 Quota status (must check before every demo)
 
-The free tiers are *very* tight. As of 2026-05-29 end-of-day **all three providers are exhausted** — see Quota Recipe at the bottom for how to know when you have headroom again.
+The free tiers are *very* tight. As of 2026-05-29 end-of-day all three providers were near-exhausted — see Quota Recipe at the bottom for how to know when you have headroom again.
+
+> **Note:** tight quota is a real demo-day concern, but it was NOT the cause of the onboarding/escalation failures — that was a thinking-token bug fixed 2026-05-30 (see CLAUDE.md). Scenarios now succeed independent of quota state.
 
 | Provider | Limit | Status today | Resets |
 |---|---|---|---|
@@ -49,17 +51,17 @@ If anything is yellow/red on screen: refresh once, then check `backend\.env` for
 
 ---
 
-## What's actually working (verified 2026-05-29)
+## What's actually working (verified 2026-05-30)
 
-The marketing scenario is the proven demo, captured in DB:
+**All three scenarios now pass.** The onboarding/escalation failures on 2026-05-29 were a thinking-token budget bug in `llm_client.py` (small-`max_tokens` tool calls truncating mid-thinking on `gemini-2.5-flash`), NOT quota — fixed 2026-05-30, see CLAUDE.md "🐛 2026-05-30" note.
 
 | Scenario | Task ID (saved) | Status | Messages | Agents involved | Story coherent? |
 |---|---|---|---|---|---|
 | **Marketing campaign** | `0444ed11-9ed4-4ba4-a3dd-68fa4095f7c2` | ✅ completed, 91s | 10 | sales · finance · ops | ✅ multi-agent delegation, budget back-and-forth, revenue forecasting |
-| Onboarding (Priya) | `b0900ef8-…` | ⚠ completed, 0 agent msgs | 3 | (none) | ❌ all subtasks failed — Gemini quota during the back-to-back run |
-| Customer escalation | `7a5306ae-…` | ⚠ completed, 0 agent msgs | 3 | (none) | ❌ same as above |
+| Onboarding (Priya) | `59f7a29d-971f-439e-baa0-e7b1d0efaa76` | ✅ completed, 60s | 8 | hr · ops · finance | ✅ `finance → hr` payroll delegation |
+| Customer escalation | `f9eb00bf-ce57-466a-9f64-d809d5a67fb1` | ✅ completed, 97s | 14 | sales · support · finance | ✅ retention strategy, `sales → support`/`sales → finance`, real $1.2M/$780k forecast |
 
-→ **Re-run onboarding + escalation tomorrow** when quotas reset, then update this table with their task IDs.
+All three ran on real Gemini with no Groq dependency.
 
 **Marketing scenario observed flow** (use this in your narration):
 1. `user → orchestrator`: prompt
@@ -186,7 +188,7 @@ Save it as `backend\scripts\quota_check.py` and run before each demo session. Tw
 
 ## Tomorrow's TODO (before the actual demo)
 
-- [ ] Re-run `scripts/run_one_scenario.py onboarding` and `escalation`, confirm both produce agent-to-agent traffic, update the "What's actually working" table.
+- [x] Re-run `scripts/run_one_scenario.py onboarding` and `escalation` — **done 2026-05-30, both produce agent-to-agent traffic.** Root cause was the thinking-token bug, not quota; table above updated.
 - [ ] Record `demo-backup.mp4`.
 - [ ] Practice Flow A live once. Time the narration.
 - [ ] Practice Flow B from the TaskDetail modal once. Time it.
