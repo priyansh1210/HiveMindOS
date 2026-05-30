@@ -11,7 +11,8 @@ On Gemini quota/rate errors, callers can request role="fallback" to retry on Gro
 from __future__ import annotations
 
 import asyncio
-from typing import Literal, Optional
+import re
+from typing import Awaitable, Callable, Literal, Optional
 
 import google.generativeai as genai
 from groq import AsyncGroq
@@ -64,6 +65,75 @@ DEFAULT_TIMEOUT_SECS = 45
 # google-generativeai 0.8.3 SDK can't set thinking_budget directly.)
 GEMINI_THINKING_HEADROOM = 2048
 
+# Free tiers throttle hard: gemini-2.5-flash is ~20 requests/day AND a low
+# per-minute RPM; Groq llama-3.3-70b is 12k tokens/MINUTE. The orchestrator
+# fans subtasks out with asyncio.gather, so without a concurrency cap a single
+# task can fire a dozen calls in one second and blow the per-minute ceiling.
+# Cap in-flight LLM calls globally (Gemini is already serialized by its lock;
+# this mainly tames the Groq fallback storm). 3 keeps the dashboard feeling
+# parallel without bursting.
+LLM_MAX_CONCURRENCY = 3
+_llm_semaphore = asyncio.Semaphore(LLM_MAX_CONCURRENCY)
+
+# Retry transient (per-minute) rate limits a couple of times, honoring the
+# provider's suggested delay. Daily caps are NOT retried (waiting seconds can't
+# clear a per-day quota) — those fail over to the next key / provider instead.
+MAX_RETRIES = 2
+MAX_RETRY_WAIT_SECS = 12.0
+
+
+def _retry_after_secs(exc: Exception) -> Optional[float]:
+    """How long to wait before retrying `exc`, or None if it isn't a transient
+    rate limit worth retrying (daily quota caps, or non-rate errors).
+    """
+    msg = str(exc)
+    low = msg.lower()
+    name = type(exc).__name__.lower()
+    is_rate = (
+        "429" in msg
+        or "rate limit" in low
+        or "resourceexhausted" in name
+        or "ratelimit" in name
+    )
+    if not is_rate:
+        return None
+    # Per-day caps won't clear by waiting a few seconds — fail over now.
+    flat = low.replace("_", "").replace(" ", "")
+    if "perday" in flat:
+        return None
+    # Honor the provider's suggested delay when present (Groq: "try again in
+    # 7.02s"; Gemini: "retry_delay { seconds: 38 }").
+    match = (
+        re.search(r"try again in ([\d.]+)\s*s", low)
+        or re.search(r"retry in ([\d.]+)", low)
+        or re.search(r"seconds:\s*(\d+)", low)
+    )
+    delay = float(match.group(1)) if match else 1.0
+    return min(delay + 0.25, MAX_RETRY_WAIT_SECS)
+
+
+async def _attempt(factory: Callable[[], Awaitable[str]]) -> str:
+    """Run `factory()`, retrying on transient per-minute rate limits up to
+    MAX_RETRIES times. Re-raises immediately on non-retryable errors so the
+    caller can fail over to the next key / provider.
+    """
+    last_exc: Optional[Exception] = None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            return await factory()
+        except Exception as exc:  # noqa: BLE001 — classified by _retry_after_secs
+            last_exc = exc
+            wait = _retry_after_secs(exc)
+            if wait is None or attempt == MAX_RETRIES:
+                raise
+            print(
+                f"[llm_client] rate-limited, retry {attempt + 1}/{MAX_RETRIES} "
+                f"in {wait:.1f}s: {str(exc)[:120]}",
+                flush=True,
+            )
+            await asyncio.sleep(wait)
+    raise last_exc  # type: ignore[misc]  # unreachable
+
 
 async def call_llm(
     prompt: str,
@@ -104,33 +174,38 @@ async def call_llm(
             json_mode=json_mode,
         )
 
-    if role == "fallback":
-        return await asyncio.wait_for(_groq(), timeout=timeout)
+    # Cap global concurrency so a fan-out of subtasks can't burst past the
+    # providers' per-minute limits. Each call also retries transient throttles.
+    async with _llm_semaphore:
+        if role == "fallback":
+            return await asyncio.wait_for(_attempt(_groq), timeout=timeout)
 
-    # Try each configured Gemini key in turn, then fall back to Groq.
-    last_gemini_exc: Optional[Exception] = None
-    for key in _gemini_keys():
-        try:
-            return await asyncio.wait_for(_gemini(key), timeout=timeout)
-        except Exception as exc:
-            last_gemini_exc = exc
-            print(
-                f"[llm_client] Gemini key …{key[-6:]} ({role}) failed: "
-                f"{type(exc).__name__}: {str(exc)[:180]}",
-                flush=True,
-            )
-            continue
+        # Try each configured Gemini key in turn, then fall back to Groq.
+        last_gemini_exc: Optional[Exception] = None
+        for key in _gemini_keys():
+            try:
+                return await asyncio.wait_for(
+                    _attempt(lambda k=key: _gemini(k)), timeout=timeout
+                )
+            except Exception as exc:
+                last_gemini_exc = exc
+                print(
+                    f"[llm_client] Gemini key …{key[-6:]} ({role}) failed: "
+                    f"{type(exc).__name__}: {str(exc)[:180]}",
+                    flush=True,
+                )
+                continue
 
-    if settings.groq_api_key:
-        try:
-            return await asyncio.wait_for(_groq(), timeout=timeout)
-        except Exception as groq_exc:
-            raise RuntimeError(
-                f"All providers failed. Last Gemini: "
-                f"{type(last_gemini_exc).__name__}: {last_gemini_exc}. "
-                f"Groq: {type(groq_exc).__name__}: {groq_exc}"
-            ) from groq_exc
-    raise last_gemini_exc  # type: ignore[misc]
+        if settings.groq_api_key:
+            try:
+                return await asyncio.wait_for(_attempt(_groq), timeout=timeout)
+            except Exception as groq_exc:
+                raise RuntimeError(
+                    f"All providers failed. Last Gemini: "
+                    f"{type(last_gemini_exc).__name__}: {last_gemini_exc}. "
+                    f"Groq: {type(groq_exc).__name__}: {groq_exc}"
+                ) from groq_exc
+        raise last_gemini_exc  # type: ignore[misc]
 
 
 async def _call_gemini(

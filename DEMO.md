@@ -8,15 +8,16 @@
 
 The free tiers are *very* tight. As of 2026-05-29 end-of-day all three providers were near-exhausted — see Quota Recipe at the bottom for how to know when you have headroom again.
 
-> **Note:** tight quota is a real demo-day concern, but it was NOT the cause of the onboarding/escalation failures — that was a thinking-token bug fixed 2026-05-30 (see CLAUDE.md). Scenarios now succeed independent of quota state.
+> **Note:** tight quota is a real demo-day concern, but it was NOT the cause of the onboarding/escalation failures — that was a thinking-token bug fixed 2026-05-30 (see the note below). Scenarios now succeed independent of quota state.
 
-| Provider | Limit | Status today | Resets |
-|---|---|---|---|
-| Gemini Flash key 1 | 250 RPD free | exhausted | 00:00 PT |
-| Gemini Flash key 2 | 250 RPD free | exhausted | 00:00 PT |
-| Groq Llama 3.3 70B | 100,000 TPD | 99,837 used | rolling 24h |
+| Provider | Real limit (observed 2026-05-30) | Resets |
+|---|---|---|
+| Gemini 2.5 Flash | **~20 requests/DAY** per project (+ low RPM) | ~00:00 PT |
+| Groq Llama 3.3 70B | **12,000 tokens/MINUTE** (TPM) + 100k tokens/day | TPM ~1 min, TPD ~24h |
 
-**Rule of thumb for the demo:** at most **ONE live scenario per minute** and **no more than ~10 live runs total per day** (each scenario is 6–15 LLM calls; planner + 5 agents × 1-3 turns each).
+> ⚠️ The Gemini free tier is **~20 requests/day**, not the 250/500 we first assumed. One orchestrated scenario fires ~10–15 Gemini calls, so **you get roughly ONE full live scenario per day per Gemini project before the daily cap hits.** Verifying scenarios + a live demo on the same day will exhaust it — record the backup video on a *fresh* day's quota.
+
+**Rule of thumb for the demo:** assume **one live scenario is all you get** before falling back to Flow B. `llm_client.py` now caps concurrency (3) and retries per-minute Groq throttles, but it can't conjure daily Gemini quota — when the day's ~20 requests are gone, use the cached marketing task (Flow B).
 
 Pre-captured tasks live in Supabase forever — use the TaskDetail modal as a "live" demo even when quota is gone (see "Demo flow B" below).
 
@@ -53,7 +54,7 @@ If anything is yellow/red on screen: refresh once, then check `backend\.env` for
 
 ## What's actually working (verified 2026-05-30)
 
-**All three scenarios now pass.** The onboarding/escalation failures on 2026-05-29 were a thinking-token budget bug in `llm_client.py` (small-`max_tokens` tool calls truncating mid-thinking on `gemini-2.5-flash`), NOT quota — fixed 2026-05-30, see CLAUDE.md "🐛 2026-05-30" note.
+**All three scenarios now pass.** The onboarding/escalation failures on 2026-05-29 were a thinking-token budget bug in `llm_client.py` (small-`max_tokens` tool calls truncating mid-thinking on `gemini-2.5-flash`), NOT quota — fixed 2026-05-30.
 
 | Scenario | Task ID (saved) | Status | Messages | Agents involved | Story coherent? |
 |---|---|---|---|---|---|
@@ -129,8 +130,9 @@ Narrate the timeline the same way as Flow A — the story is the same; only diff
 ## Demo gotchas
 
 - **First request after a cold start is slow** (~15 s) because Next.js Turbopack compiles on demand. Always warm the routes before going live.
-- **Gemini Pro free tier = 25 req/day.** The planner deliberately uses Flash (see `llm_client.py`) — do NOT switch the planner to Pro before the demo.
-- **Dual Gemini key failover** is on. If key 1 quota is exhausted, key 2 transparently takes over; Groq is the final fallback. All three are in `backend\.env`.
+- **Gemini Flash free tier ≈ 20 requests/DAY** (the real binding limit — see quota section). One scenario ≈ 10–15 calls, so you get ~1 live run/day before the wall. Pro is 25/day but the planner deliberately uses Flash — do NOT switch the planner to Pro.
+- **Dual Gemini key failover** is on, but it only doubles your daily budget if the two keys are in **separate Google projects** (the 20/day cap is *per project*). Same-project keys share the 20. Groq is the final fallback. All in `backend\.env`.
+- **Each `quota_check.py` run burns 1 of your ~20 daily Gemini requests** — don't probe casually on demo day.
 - **Activity Log is empty** (`/api/analytics/activity` returns `[]`). The Live Activity panel on `/dashboard/analytics` uses the WebSocket stream instead, so this is invisible to judges.
 
 ---

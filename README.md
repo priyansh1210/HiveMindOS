@@ -352,7 +352,6 @@ HiveMindOS/
 │   └── seed.sql                     # NovaTech demo workspace
 │
 ├── DEMO.md                          # 3-minute pitch script + quota recipe
-├── CLAUDE.md                        # Full build log (10-day blueprint trace)
 └── README.md                        # You are here
 ```
 
